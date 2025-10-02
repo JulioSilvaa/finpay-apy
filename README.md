@@ -96,9 +96,9 @@ npm start
 
 ## 📝 Modelo de Negócio
 
-- **Taxa da plataforma**: 1.5% sobre cada transação
+
 - **Integração Asaas**: Split payment automático
-- **Taxas Asaas**: PIX grátis, Boleto R$3.49, Cartão 4.99%
+- **Taxas da provedora de pagamento**: PIX grátis, Boleto x, Cartão x%
 
 ## ✅ CI/CD
 
@@ -108,7 +108,7 @@ npm start
 
 ## 📚 Documentação
 
-Ver pasta `docs/` (privada, não commitada)
+Ver pasta `docs/emPeodução` 
 
 ---
 

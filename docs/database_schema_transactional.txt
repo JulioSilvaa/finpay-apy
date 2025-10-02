@@ -1,0 +1,553 @@
+// Schema Prisma - CobrançaFácil (Modelo Transacional 1,5%)
+// Gerado para: PostgreSQL (Supabase/Neon/Railway)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// TENANTS (Profissionais/Autônomos)
+// ============================================
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  email       String   @unique
+  phone       String?
+  document    String?  // CPF/CNPJ
+  
+  // Configurações de negócio
+  businessName String? @map("business_name")
+  businessType String? @map("business_type") // psicologo, barbeiro, personal, etc
+  
+  // Integração Asaas
+  asaasCustomerId String?  @unique @map("asaas_customer_id") // ID da subconta no Asaas
+  asaasApiKey     String?  @map("asaas_api_key") // Criptografado
+  asaasWalletId   String?  @map("asaas_wallet_id")
+  
+  // Configurações de cobrança
+  feePercentage   Decimal  @default(1.5) @map("fee_percentage") @db.Decimal(5, 2) // Nossa taxa (default 1.5%)
+  autoCharge      Boolean  @default(true) @map("auto_charge") // Cobrar automaticamente?
+  
+  // Status e controle
+  isActive        Boolean  @default(true) @map("is_active")
+  onboardingDone  Boolean  @default(false) @map("onboarding_done")
+  
+  // Notificações
+  emailNotifications     Boolean @default(true) @map("email_notifications")
+  whatsappNotifications  Boolean @default(false) @map("whatsapp_notifications")
+  smsNotifications       Boolean @default(false) @map("sms_notifications")
+  reminderDaysBefore     Int     @default(3) @map("reminder_days_before")
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  lastLoginAt DateTime? @map("last_login_at")
+
+  // Relações
+  users         User[]
+  customers     Customer[]
+  subscriptions Subscription[]
+  invoices      Invoice[]
+  transactions  Transaction[] // Nossa receita (1.5% por transação)
+  payments      Payment[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+
+  @@index([email])
+  @@index([asaasCustomerId])
+  @@index([isActive])
+  @@index([createdAt])
+  @@map("tenants")
+}
+
+// ============================================
+// USERS (Usuários que acessam o sistema)
+// ============================================
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String?
+  role         UserRole @default(USER)
+  tenantId     String   @map("tenant_id")
+  isActive     Boolean  @default(true) @map("is_active")
+  
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([tenantId])
+  @@index([tenantId, role])
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+// ============================================
+// CUSTOMERS (Clientes do autônomo)
+// ============================================
+model Customer {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  
+  name      String
+  email     String
+  phone     String?
+  document  String?  // CPF/CNPJ
+  
+  // Endereço (opcional)
+  address   Json?
+  
+  // Dados financeiros
+  totalPaid       Decimal @default(0) @map("total_paid") @db.Decimal(10, 2)
+  totalPending    Decimal @default(0) @map("total_pending") @db.Decimal(10, 2)
+  totalOverdue    Decimal @default(0) @map("total_overdue") @db.Decimal(10, 2)
+  
+  // Status
+  isActive  Boolean  @default(true) @map("is_active")
+  notes     String?  @db.Text
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptions Subscription[]
+  invoices      Invoice[]
+  payments      Payment[]
+  notifications Notification[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@index([name])
+  @@index([phone])
+  @@map("customers")
+}
+
+// ============================================
+// SUBSCRIPTIONS (Cobranças Recorrentes)
+// ============================================
+model Subscription {
+  id             String            @id @default(uuid())
+  tenantId       String            @map("tenant_id")
+  customerId     String            @map("customer_id")
+  
+  description    String?
+  amount         Decimal           @db.Decimal(10, 2)
+  billingCycle   BillingCycle      @map("billing_cycle")
+  paymentMethod  PaymentMethod     @map("payment_method")
+  
+  status         SubscriptionStatus @default(ACTIVE)
+  
+  // Datas
+  startDate       DateTime @default(now()) @map("start_date")
+  nextBillingDate DateTime? @map("next_billing_date")
+  lastBillingDate DateTime? @map("last_billing_date")
+  endDate         DateTime? @map("end_date")
+  
+  // PIX parcelado
+  installments   Int? // Quantidade de parcelas
+  
+  // Controle interno
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  invoices Invoice[]
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([tenantId, status])
+  @@index([nextBillingDate])
+  @@index([paymentMethod])
+  @@index([createdAt])
+  @@map("subscriptions")
+}
+
+enum BillingCycle {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  QUARTERLY
+  BIANNUAL
+  ANNUAL
+}
+
+enum PaymentMethod {
+  PIX
+  BOLETO
+  CREDIT_CARD
+  DEBIT_CARD
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAUSED
+  CANCELED
+  OVERDUE
+}
+
+// ============================================
+// INVOICES (Faturas individuais)
+// ============================================
+model Invoice {
+  id             String        @id @default(uuid())
+  tenantId       String        @map("tenant_id")
+  subscriptionId String?       @map("subscription_id")
+  customerId     String        @map("customer_id")
+  
+  invoiceNumber  String        @unique @map("invoice_number") // INV-2025-001
+  description    String?
+  
+  // Valores
+  amount         Decimal       @db.Decimal(10, 2) // Valor que o cliente paga
+  tenantReceives Decimal       @db.Decimal(10, 2) @map("tenant_receives") // Valor líquido do autônomo
+  platformFee    Decimal       @db.Decimal(10, 2) @map("platform_fee") // Nossa taxa (1.5%)
+  asaasFee       Decimal       @default(0) @db.Decimal(10, 2) @map("asaas_fee") // Taxa do Asaas
+  
+  // Datas
+  dueDate        DateTime      @map("due_date")
+  paidDate       DateTime?     @map("paid_date")
+  
+  status         InvoiceStatus @default(PENDING)
+  
+  // Links de pagamento (gerados pelo Asaas)
+  paymentLink    String?       @map("payment_link") @db.Text
+  pixQrCode      String?       @map("pix_qr_code") @db.Text
+  pixCopyPaste   String?       @map("pix_copy_paste") @db.Text
+  boletoUrl      String?       @map("boleto_url") @db.Text
+  boletoBarcode  String?       @map("boleto_barcode")
+  
+  // IDs externos
+  asaasChargeId  String?       @unique @map("asaas_charge_id") // ID da cobrança no Asaas
+  asaasPaymentId String?       @map("asaas_payment_id")
+  
+  // Metadata
+  metadata       Json?
+  
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscription  Subscription?  @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  customer      Customer       @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  payments      Payment[]
+  transactions  Transaction[] // Registro de nossa receita
+  notifications Notification[]
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([subscriptionId])
+  @@index([tenantId, status])
+  @@index([dueDate])
+  @@index([status, dueDate])
+  @@index([asaasChargeId])
+  @@index([createdAt])
+  @@map("invoices")
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELED
+  REFUNDED
+  PARTIALLY_PAID
+}
+
+// ============================================
+// PAYMENTS (Pagamentos recebidos)
+// ============================================
+model Payment {
+  id            String        @id @default(uuid())
+  invoiceId     String        @map("invoice_id")
+  tenantId      String        @map("tenant_id")
+  customerId    String        @map("customer_id")
+  
+  amount        Decimal       @db.Decimal(10, 2)
+  paymentMethod PaymentMethod @map("payment_method")
+  status        PaymentStatus @default(PENDING)
+  
+  paymentDate   DateTime?     @map("payment_date")
+  confirmedAt   DateTime?     @map("confirmed_at")
+  
+  // IDs do Asaas
+  asaasPaymentId String?      @unique @map("asaas_payment_id")
+  
+  // Metadata
+  metadata      Json?
+  
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  invoice  Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId])
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([tenantId, status])
+  @@index([status])
+  @@index([paymentDate])
+  @@index([asaasPaymentId])
+  @@index([tenantId, status, paymentDate])
+  @@map("payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  REFUNDED
+  CHARGEBACK
+}
+
+// ============================================
+// TRANSACTIONS (Nossa receita - 1.5% por transação)
+// ============================================
+model Transaction {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  invoiceId   String?   @map("invoice_id")
+  
+  type        TransactionType
+  
+  // Valores
+  amount      Decimal   @db.Decimal(10, 2) // Valor da nossa taxa
+  percentage  Decimal   @db.Decimal(5, 2) // Percentual cobrado (1.5%)
+  baseAmount  Decimal   @db.Decimal(10, 2) @map("base_amount") // Valor base (do pagamento)
+  
+  status      TransactionStatus @default(PENDING)
+  
+  // Controle de repasse
+  processedAt DateTime? @map("processed_at")
+  paidAt      DateTime? @map("paid_at")
+  
+  description String?
+  metadata    Json?
+  
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([invoiceId])
+  @@index([tenantId, status])
+  @@index([type])
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@map("transactions")
+}
+
+enum TransactionType {
+  PLATFORM_FEE      // Nossa taxa de 1.5%
+  REFUND            // Estorno
+  ADJUSTMENT        // Ajuste manual
+  BONUS             // Bônus/crédito
+}
+
+enum TransactionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+// ============================================
+// NOTIFICATIONS (Email/WhatsApp/SMS)
+// ============================================
+model Notification {
+  id         String             @id @default(uuid())
+  tenantId   String             @map("tenant_id")
+  customerId String?            @map("customer_id")
+  invoiceId  String?            @map("invoice_id")
+  
+  type       NotificationType
+  channel    NotificationChannel
+  
+  recipient  String // Email ou telefone
+  subject    String?
+  message    String @db.Text
+  
+  status     NotificationStatus @default(PENDING)
+  
+  sentAt     DateTime? @map("sent_at")
+  deliveredAt DateTime? @map("delivered_at")
+  openedAt   DateTime? @map("opened_at")
+  
+  errorMessage String? @map("error_message") @db.Text
+  retryCount   Int     @default(0) @map("retry_count")
+  
+  metadata   Json?
+  
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  invoice  Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([invoiceId])
+  @@index([tenantId, status])
+  @@index([status])
+  @@index([sentAt])
+  @@index([type])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  INVOICE_CREATED
+  INVOICE_DUE_SOON
+  INVOICE_OVERDUE
+  PAYMENT_RECEIVED
+  PAYMENT_FAILED
+  SUBSCRIPTION_RENEWED
+  SUBSCRIPTION_CANCELED
+  WELCOME
+  PASSWORD_RESET
+}
+
+enum NotificationChannel {
+  EMAIL
+  WHATSAPP
+  SMS
+  PUSH
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  OPENED
+  FAILED
+  SCHEDULED
+}
+
+// ============================================
+// AUDIT_LOGS (Auditoria completa)
+// ============================================
+model AuditLog {
+  id        String   @id @default(uuid())
+  tenantId  String?  @map("tenant_id")
+  userId    String?  @map("user_id")
+  
+  action    AuditAction
+  entity    String // Invoice, Payment, Customer, etc
+  entityId  String @map("entity_id")
+  
+  changes   Json? // Before/After
+  
+  ipAddress String? @map("ip_address")
+  userAgent String? @map("user_agent") @db.Text
+  
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  PAYMENT_RECEIVED
+  INVOICE_SENT
+  SETTINGS_CHANGED
+}
+
+// ============================================
+// WEBHOOK_EVENTS (Eventos do Asaas)
+// ============================================
+model WebhookEvent {
+  id            String   @id @default(uuid())
+  tenantId      String?  @map("tenant_id")
+  
+  provider      String   // asaas, juno, stripe
+  eventType     String   @map("event_type")
+  eventId       String?  @map("event_id") // ID único do evento
+  
+  payload       Json
+  
+  processed     Boolean  @default(false)
+  processedAt   DateTime? @map("processed_at")
+  
+  errorMessage  String?  @map("error_message") @db.Text
+  retryCount    Int      @default(0) @map("retry_count")
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([provider, eventId])
+  @@index([tenantId])
+  @@index([provider])
+  @@index([processed])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("webhook_events")
+}
+
+// ============================================
+// FINANCIAL_SUMMARY (Resumo financeiro por tenant)
+// Materialized view atualizada diariamente
+// ============================================
+model FinancialSummary {
+  id                String   @id @default(uuid())
+  tenantId          String   @unique @map("tenant_id")
+  
+  // Receitas
+  totalRevenue      Decimal  @default(0) @map("total_revenue") @db.Decimal(10, 2)
+  monthlyRevenue    Decimal  @default(0) @map("monthly_revenue") @db.Decimal(10, 2)
+  
+  // Faturas
+  totalInvoices     Int      @default(0) @map("total_invoices")
+  paidInvoices      Int      @default(0) @map("paid_invoices")
+  pendingInvoices   Int      @default(0) @map("pending_invoices")
+  overdueInvoices   Int      @default(0) @map("overdue_invoices")
+  
+  // Valores
+  totalPaid         Decimal  @default(0) @map("total_paid") @db.Decimal(10, 2)
+  totalPending      Decimal  @default(0) @map("total_pending") @db.Decimal(10, 2)
+  totalOverdue      Decimal  @default(0) @map("total_overdue") @db.Decimal(10, 2)
+  
+  // Nossa receita (1.5%)
+  platformRevenue   Decimal  @default(0) @map("platform_revenue") @db.Decimal(10, 2)
+  platformRevenueMonth Decimal @default(0) @map("platform_revenue_month") @db.Decimal(10, 2)
+  
+  // Clientes
+  totalCustomers    Int      @default(0) @map("total_customers")
+  activeCustomers   Int      @default(0) @map("active_customers")
+  
+  lastCalculatedAt  DateTime @default(now()) @map("last_calculated_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([lastCalculatedAt])
+  @@map("financial_summary")
+}

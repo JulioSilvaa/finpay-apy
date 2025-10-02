@@ -28,3 +28,6 @@ logs/
 
 # Prisma
 prisma/migrations/
+
+# Documentation (private)
+docs/

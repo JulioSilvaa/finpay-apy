@@ -108,7 +108,7 @@ npm start
 
 ## 📚 Documentação
 
-Ver pasta `docs/emPeodução` 
+Ver pasta `docs/emPeodução`
 
 ---
 

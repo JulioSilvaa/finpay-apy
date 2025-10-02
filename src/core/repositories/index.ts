@@ -1,0 +1,6 @@
+export * from './ICustomerRepository'
+export * from './IInvoiceRepository'
+export * from './IPaymentRepository'
+export * from './ISubscriptionRepository'
+export * from './ITenantRepository'
+export * from './ITransactionRepository'

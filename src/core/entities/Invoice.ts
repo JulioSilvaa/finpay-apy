@@ -1,5 +1,5 @@
-import { DomainError } from '../../shared/errors'
 import { env } from '../../config'
+import { DomainError } from '../../shared/errors'
 import type { Tenant } from './Tenant'
 
 export type InvoiceStatus = 'PENDING' | 'PAID' | 'OVERDUE' | 'CANCELED'

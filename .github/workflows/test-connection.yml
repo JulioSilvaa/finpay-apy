@@ -1,0 +1,25 @@
+name: Test VPS Connection
+
+on:
+  workflow_dispatch: # Permite executar manualmente
+
+jobs:
+  test-connection:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Test SSH Connection
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            echo "✅ Conexão SSH estabelecida com sucesso!"
+            echo "📍 Hostname: $(hostname)"
+            echo "👤 Usuário: $(whoami)"
+            echo "📂 Diretório atual: $(pwd)"
+            echo "💻 Sistema: $(uname -a)"
+            echo "🐳 Docker instalado: $(docker --version 2>/dev/null || echo 'não instalado')"
+            echo "📦 Node instalado: $(node --version 2>/dev/null || echo 'não instalado')"

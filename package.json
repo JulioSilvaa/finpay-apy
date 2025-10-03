@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Sistema de cobrança para autônomos - Clean Architecture + DDD",
   "main": "dist/main.js",
-  "type": "module",
   "scripts": {
     "dev": "tsx ./src/infra/http/express/Express.ts",
     "build": "rimraf dist && tsc && tsc-alias",

@@ -5,9 +5,9 @@
   "main": "dist/main.js",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "build": "tsc",
-    "start": "node dist/main.js",
+    "dev": "tsx ./src/infra/http/express/Express.ts",
+    "build": "rimraf dist && tsc && tsc-alias",
+    "start": "node ./dist/infra/http/express/Express.js",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
@@ -16,7 +16,7 @@
     "prepare": "husky"
   },
   "lint-staged": {
-    "*.ts": [
+    "**/*.ts": [
       "eslint --fix",
       "vitest related --run"
     ]
@@ -42,6 +42,8 @@
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.3",
+    "rimraf": "^6.0.1",
+    "tsc-alias": "^1.8.16",
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",
@@ -50,6 +52,10 @@
   },
   "dependencies": {
     "@prisma/client": "^5.8.0",
+    "@types/express": "^5.0.3",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "express-async-errors": "^3.1.1",
     "prisma": "^5.8.0"
   }
 }
